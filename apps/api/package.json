@@ -11,7 +11,7 @@
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@hono/node-server": "*",
-    "hono": "*"
+    "@hono/node-server": "^1.19.9",
+    "hono": "^4.12.2"
   }
 }
