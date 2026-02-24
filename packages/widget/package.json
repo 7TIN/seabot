@@ -1,0 +1,26 @@
+{
+  "name": "@docsai/widget",
+  "version": "0.1.0",
+  "description": "Vanilla JS DocsAI widget",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "tsdown src/index.ts --format iife --global-name DocsAI --dts --watch",
+    "build": "tsdown src/index.ts --format iife --global-name DocsAI --dts",
+    "lint": "oxlint src",
+    "test": "vitest run",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@docsai/core": "workspace:*"
+  }
+}

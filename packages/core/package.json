@@ -1,0 +1,23 @@
+{
+  "name": "@docsai/core",
+  "version": "0.1.0",
+  "description": "Framework-agnostic DocsAI SDK core client",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "tsdown src/index.ts --format esm --dts --watch",
+    "build": "tsdown src/index.ts --format esm --dts",
+    "lint": "oxlint src",
+    "test": "vitest run",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  }
+}
