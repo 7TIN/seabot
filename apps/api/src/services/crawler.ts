@@ -1,24 +1,13 @@
-import { CheerioCrawler, Dataset } from 'crawlee';
+import { CheerioCrawler } from 'crawlee';
 
-// CheerioCrawler crawls the web using HTTP requests
-// and parses HTML using the Cheerio library.
 const crawler = new CheerioCrawler({
-    // Use the requestHandler to process each of the crawled pages.
-    async requestHandler({ request, $, enqueueLinks, log }) {
-        const title = $('title').text();
-        log.info(`Title of ${request.loadedUrl} is '${title}'`);
-
-        // Save results as JSON to ./storage/datasets/default
-        await Dataset.pushData({ title, url: request.loadedUrl });
-
-        // Extract links from the current page
-        // and add them to the crawling queue.
+    async requestHandler({ request, enqueueLinks, log }) {
+        log.info(request.url);
+        // Add all links from page to RequestQueue
         await enqueueLinks();
     },
-
-    // Let's limit our crawls to make our tests shorter and safer.
-    maxRequestsPerCrawl: 50,
+    // maxRequestsPerCrawl: 10, // Limitation for only 10 requests (do not use if you want to crawl all links)
 });
 
-// Add first URL to the queue and start the crawl.
+// Run the crawler with initial request
 await crawler.run(['https://crawlee.dev']);
