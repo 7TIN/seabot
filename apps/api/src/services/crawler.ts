@@ -1,13 +1,146 @@
-import { CheerioCrawler } from 'crawlee';
+import { CheerioCrawler, Dataset } from "crawlee";
+
+function normalize(text: string) {
+  return text
+    .normalize("NFKC")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // markdown links
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function chunkText(text: string, size = 900) {
+  const chunks: string[] = [];
+
+  let i = 0;
+  while (i < text.length) {
+    chunks.push(text.slice(i, i + size));
+    i += size;
+  }
+
+  return chunks;
+}
 
 const crawler = new CheerioCrawler({
-    async requestHandler({ request, enqueueLinks, log }) {
-        log.info(request.url);
-        // Add all links from page to RequestQueue
-        await enqueueLinks();
-    },
-    // maxRequestsPerCrawl: 10, // Limitation for only 10 requests (do not use if you want to crawl all links)
+  maxRequestsPerCrawl: 500,
+
+  async requestHandler({ request, $, enqueueLinks, log }) {
+    const url = request.loadedUrl!;
+    log.info(`Processing ${url}`);
+
+    // Remove layout junk
+    $("nav, aside, footer, script, style").remove();
+
+    const title = normalize($("title").text());
+
+    const container = $("article").length
+      ? $("article")
+      : $("main");
+
+    let lvl1 = "";
+    let lvl2 = "";
+
+    const records: any[] = [];
+
+    container.find("h1, h2, h3").each((_, el) => {
+      const tag = el.tagName.toLowerCase();
+      const heading = normalize($(el).text());
+      const id = $(el).attr("id");
+
+      if (tag === "h1") lvl1 = heading;
+      if (tag === "h2") lvl2 = heading;
+
+      const section = $(el).nextUntil("h1, h2, h3");
+
+      // TEXT CONTENT (everything except code)
+      const textContent = normalize(
+        section
+          .clone()
+          .find("pre, code")
+          .remove()
+          .end()
+          .text()
+      );
+
+      // CODE BLOCKS
+      const codeBlocks = section
+        .find("pre code")
+        .map((_, el) => $(el).text())
+        .get();
+
+      const code = codeBlocks.join("\n\n");
+
+      if (!textContent && !code) return;
+
+      // chunk long text
+      const chunks = chunkText(textContent);
+
+      for (const chunk of chunks) {
+        records.push({
+          title,
+          lvl0: title,
+          lvl1,
+          lvl2,
+          heading,
+          content: chunk,
+          code,
+          url: id ? `${url}#${id}` : url,
+        });
+      }
+    });
+
+    // Fallback when page has no headings
+    if (records.length === 0) {
+      const textContent = normalize(
+        container
+          .clone()
+          .find("pre, code")
+          .remove()
+          .end()
+          .text()
+      );
+
+      const codeBlocks = container
+        .find("pre code")
+        .map((_, el) => $(el).text())
+        .get();
+
+      const chunks = chunkText(textContent);
+
+      for (const chunk of chunks) {
+        records.push({
+          title,
+          lvl0: title,
+          lvl1: title,
+          lvl2: null,
+          heading: title,
+          content: chunk,
+          code: codeBlocks.join("\n\n"),
+          url,
+        });
+      }
+    }
+
+    if (records.length > 0) {
+      log.info(`Extracted ${records.length} records`);
+      await Dataset.pushData(records);
+    }
+
+    // follow docs links
+    await enqueueLinks({
+      strategy: "same-domain",
+      globs: [
+        "**/docs/**",
+        "**/guide/**",
+        "**/reference/**",
+      ],
+    });
+  },
+
+  async failedRequestHandler({ request, log }) {
+    log.error(`Failed crawling ${request.url}`);
+  },
 });
 
-// Run the crawler with initial request
-await crawler.run(['https://crawlee.dev']);
+await crawler.run([
+  "https://hono.dev/docs",
+]);
