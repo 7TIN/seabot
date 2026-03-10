@@ -4,11 +4,12 @@
     "dev": "bun run --hot src/index.ts",
     "start:crawler": "tsx src/services/crawler.ts",
     "start": "bun run start:crawler",
-    "start:merge" : "bun run tsx scripts/export-dataset.ts"
+    "start:merge": "bun run tsx scripts/export-dataset.ts"
   },
   "dependencies": {
     "crawlee": "^3.16.0",
-    "hono": "^4.12.5"
+    "hono": "^4.12.5",
+    "typesense": "^3.0.2"
   },
   "devDependencies": {
     "@apify/tsconfig": "^0.1.1",
