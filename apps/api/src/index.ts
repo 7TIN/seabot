@@ -1,7 +1,17 @@
 import { Hono } from "hono";
 import { searchDocs } from "./services/search.ts";
+import { cors } from "hono/cors";
 
 const app = new Hono();
+
+app.use(
+  "*",
+  cors({
+    origin: ["http://localhost:5173"], // your React dev server
+    allowMethods: ["GET"],
+    allowHeaders: ["Content-Type"],
+  })
+);
 
 app.get("/", (c) => {
   return c.text("Docs Search API running");
