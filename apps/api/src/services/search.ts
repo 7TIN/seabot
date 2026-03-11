@@ -21,34 +21,41 @@ type SearchOptions = {
 // search();
 
 
-export async function searchDocs({ query, page = 1, perPage = 10 }: SearchOptions) {
+export async function searchDocs({
+  query,
+  page = 1,
+  perPage = 10,
+}: SearchOptions) {
+
   const result = await client
     .collections("docs")
     .documents()
     .search({
+
       q: query,
 
-      // what fields to search
-      query_by: "heading,content,code",
+      query_by: "heading,lvl1,lvl2,lvl3,content",
 
-      // importance ranking
-      query_by_weights: "10,5,2",
+      query_by_weights: "20,15,12,10,5",
 
-      // allow partial matching
       prefix: true,
 
-      // typo tolerance
       num_typos: 2,
 
-      // highlight matches
-      highlight_fields: "heading,content,code",
+      prioritize_exact_match: true,
 
-      // limit returned fields
-      include_fields: "title,heading,content,url",
+      drop_tokens_threshold: 0,
 
+      sort_by: "_text_match:desc,position:asc",
+
+      highlight_fields: "heading,content",
+
+      include_fields:
+        "title,lvl0,lvl1,lvl2,lvl3,heading,content,url,type",
       page,
       per_page: perPage,
     });
 
   return result;
 }
+

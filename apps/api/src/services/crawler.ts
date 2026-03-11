@@ -1,11 +1,9 @@
 import { CheerioCrawler, Dataset } from "crawlee";
-// import { mkdir, writeFile } from "node:fs/promises";
-// import path from "node:path";
 
 function normalize(text: string) {
   return text
     .normalize("NFKC")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1") // markdown links
+    .replace(/\u200B/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -22,48 +20,27 @@ function chunkText(text: string, size = 900) {
   return chunks;
 }
 
-// async function exportMergedDocsJson() {
-//   const dataset = await Dataset.open();
-//   const merged: unknown[] = [];
-
-//   let offset = 0;
-//   const limit = 1000;
-
-//   while (true) {
-//     const { items, total } = await dataset.getData({ offset, limit });
-//     merged.push(...items);
-
-//     offset += items.length;
-//     if (offset >= total || items.length === 0) break;
-//   }
-
-//   const storageDir = process.env.CRAWLEE_STORAGE_DIR ?? "storage";
-//   const docsPath = path.resolve(storageDir, "docs.json");
-
-//   await mkdir(path.dirname(docsPath), { recursive: true });
-//   await writeFile(docsPath, JSON.stringify(merged, null, 2), "utf8");
-
-//   console.log(`Merged dataset exported to ${docsPath}`);
-// }
-
 const crawler = new CheerioCrawler({
   maxRequestsPerCrawl: 500,
 
   async requestHandler({ request, $, enqueueLinks, log }) {
     const url = request.loadedUrl!;
-    log.info(`Processing ${url}`);
+    const cleanUrl = url.split("#")[0];
 
-    // Remove layout junk
+    log.info(`Processing ${cleanUrl}`);
+
     $("nav, aside, footer, script, style").remove();
 
     const title = normalize($("title").text());
 
-    const container = $("article").length
-      ? $("article")
-      : $("main");
+    const container = $("article").length ? $("article") : $("main");
 
+    let lvl0 = title;
     let lvl1 = "";
     let lvl2 = "";
+    let lvl3 = "";
+
+    let position = 0;
 
     const records: any[] = [];
 
@@ -72,22 +49,31 @@ const crawler = new CheerioCrawler({
       const heading = normalize($(el).text());
       const id = $(el).attr("id");
 
-      if (tag === "h1") lvl1 = heading;
-      if (tag === "h2") lvl2 = heading;
+      if (!heading) return;
+
+      if (tag === "h1") {
+        lvl1 = heading;
+        lvl2 = "";
+        lvl3 = "";
+      }
+
+      if (tag === "h2") {
+        lvl2 = heading;
+        lvl3 = "";
+      }
+
+      if (tag === "h3") {
+        lvl3 = heading;
+      }
+
+      position++;
 
       const section = $(el).nextUntil("h1, h2, h3");
 
-      // TEXT CONTENT (everything except code)
       const textContent = normalize(
-        section
-          .clone()
-          .find("pre, code")
-          .remove()
-          .end()
-          .text()
+        section.clone().find("pre, code").remove().end().text()
       );
 
-      // CODE BLOCKS
       const codeBlocks = section
         .find("pre code")
         .map((_, el) => $(el).text())
@@ -95,40 +81,49 @@ const crawler = new CheerioCrawler({
 
       const code = codeBlocks.join("\n\n");
 
+      const sectionUrl = id ? `${cleanUrl}#${id}` : cleanUrl;
+
+      // HEADING RECORD (important for ranking)
+      records.push({
+        title,
+        lvl0,
+        lvl1,
+        lvl2,
+        lvl3,
+        heading,
+        content: "",
+        code: "",
+        type: "heading",
+        position,
+        url: sectionUrl,
+      });
+
       if (!textContent && !code) return;
 
-      // chunk long text
       const chunks = chunkText(textContent);
 
       for (const chunk of chunks) {
         records.push({
           title,
-          lvl0: title,
+          lvl0,
           lvl1,
           lvl2,
+          lvl3,
           heading,
           content: chunk,
           code,
-          url: id ? `${url}#${id}` : url,
+          type: "content",
+          position,
+          url: sectionUrl,
         });
       }
     });
 
-    // Fallback when page has no headings
+    // Fallback if page has no headings
     if (records.length === 0) {
       const textContent = normalize(
-        container
-          .clone()
-          .find("pre, code")
-          .remove()
-          .end()
-          .text()
+        container.clone().find("pre, code").remove().end().text()
       );
-
-      const codeBlocks = container
-        .find("pre code")
-        .map((_, el) => $(el).text())
-        .get();
 
       const chunks = chunkText(textContent);
 
@@ -137,11 +132,14 @@ const crawler = new CheerioCrawler({
           title,
           lvl0: title,
           lvl1: title,
-          lvl2: null,
+          lvl2: "",
+          lvl3: "",
           heading: title,
           content: chunk,
-          code: codeBlocks.join("\n\n"),
-          url,
+          code: "",
+          type: "content",
+          position: 0,
+          url: cleanUrl,
         });
       }
     }
@@ -151,7 +149,6 @@ const crawler = new CheerioCrawler({
       await Dataset.pushData(records);
     }
 
-    // follow docs links
     await enqueueLinks({
       strategy: "same-domain",
       globs: [
@@ -172,5 +169,3 @@ await crawler.run([
 ]);
 
 await Dataset.exportToJSON("docs");
-
-// await exportMergedDocsJson();
