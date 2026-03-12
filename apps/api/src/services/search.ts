@@ -13,40 +13,36 @@ export async function searchDocs({ query, page = 1, perPage = 10 }: SearchOption
     .search({
       q: query,
 
-      // ONLY search heading + content + code.
-      // Do NOT include lvl1/lvl2/title — those fields repeat the parent heading
-      // name on every subsection, which inflates fields_matched for subsections
-      // and causes "Routing with host Header" (h2) to outscore "Routing" (h1).
+      // Only heading + content + code.
+      // lvl1/lvl2/title are NOT searched — they echo parent heading names onto
+      // every child section and inflate scores for subsections unfairly.
       query_by: "heading,content,code",
-
-      // heading exact match is the strongest signal
       query_by_weights: "10,3,1",
 
-      // Prefix only on heading (for as-you-type UX), not content/code
+      // Prefix only on heading (as-you-type feel)
       prefix: "true,false,false",
 
-      // 1 typo on heading, 2 on content (longer text), 1 on code
+      // Typo tolerance
       num_typos: "1,2,1",
 
-      // Exact whole-word match scores higher than prefix/typo
       prioritize_exact_match: true,
-
-      // Match at start of field scores higher (heading that starts with "Routing"
-      // beats heading that ends with "Routing")
       prioritize_token_position: true,
 
-      // Highlight matches
       highlight_fields: "heading,content,code",
       highlight_affix_num_tokens: 5,
 
-      // Fields to return
-      include_fields: "title,heading,headingLevel,content,url,position,pageScore,lvl1,lvl2",
+      include_fields: "title,heading,headingLevel,content,url,position,pageScore,rank,lvl1,lvl2",
 
-      // Tie-breaking:
-      // When two results have the same text_match score (e.g. both match
-      // "routing" only in heading), headingLevel ASC ensures h1 beats h2,
-      // and position ASC ensures earlier-on-page beats later.
-      sort_by: "_text_match:desc,headingLevel:asc,position:asc",
+      // rank DESC is a single deterministic number baked at crawl time:
+      //   pageScore tier (×10000) + headingLevel tier (×1000) + position tier (×1)
+      //
+      // "Routing" h1 pos=0  on /docs/api/ → rank 804999
+      // "Routing with host" h2 pos=11     → rank 803988   ← always loses
+      // "Path-Based Routing" h3 on /middleware/ → rank 602979  ← always loses
+      //
+      // This is reliable because rank is a plain int32 — no floating point,
+      // no Typesense internal scoring surprises.
+      sort_by: "_text_match:desc,rank:desc",
 
       page,
       per_page: perPage,

@@ -22,6 +22,7 @@ async function indexDocs() {
     code:         doc.code         ?? "",
     position:     doc.position     ?? 0,
     pageScore:    doc.pageScore    ?? 40,
+    rank:         doc.rank         ?? 0,
     url:          doc.url          ?? "",
   }));
 

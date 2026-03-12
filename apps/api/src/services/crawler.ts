@@ -17,9 +17,29 @@ function getPageScore(url: string): number {
 }
 
 function buildUrl(pageUrl: string, id: string | undefined): string {
-  // Always strip existing hash to avoid double-anchor bug (#regexp#routing)
   const base = pageUrl.split("#")[0];
   return id ? `${base}#${id}` : (base || pageUrl);
+}
+
+/**
+ * Single composite rank score baked at crawl time.
+ * Higher = more important = should appear first.
+ *
+ * Formula (all additive, no overlap between tiers):
+ *   pageScore  (40–80)  × 10000  → 400000–800000  (page importance tier)
+ *   headingLevel (1–4) inverted  × 1000   → h1=4000, h2=3000, h3=2000, h4=1000
+ *   position (0–999) inverted    × 1      → earlier = higher (max 999)
+ *
+ * Example:
+ *   "Routing" h1 pos=0  on /docs/api/  → 800000 + 4000 + 999 = 804999
+ *   "Routing with host" h2 pos=11      → 800000 + 3000 + 988 = 803988
+ *   "Path-Based Routing" h3 pos=20 on /docs/middleware/ → 600000 + 2000 + 979 = 602979
+ */
+function computeRank(pageScore: number, headingLevel: number, position: number): number {
+  const pageTier    = pageScore * 10000;
+  const levelTier   = (5 - headingLevel) * 1000;   // h1→4000, h2→3000, h3→2000, h4→1000
+  const posTier     = Math.max(0, 999 - position);  // earlier = higher
+  return pageTier + levelTier + posTier;
 }
 
 const crawler = new CheerioCrawler({
@@ -50,7 +70,6 @@ const crawler = new CheerioCrawler({
       if (tag === "h1") { lvl1 = heading; lvl2 = ""; }
       if (tag === "h2") lvl2 = heading;
 
-      // Collect ALL text until next heading — no chunking
       const section = $(el).nextUntil("h1, h2, h3, h4");
 
       const textContent = normalize(
@@ -62,7 +81,6 @@ const crawler = new CheerioCrawler({
         .map((_, el) => $(el).text())
         .get();
 
-      // Always push one record per heading (even code-only sections)
       records.push({
         title,
         lvl0: title,
@@ -75,12 +93,14 @@ const crawler = new CheerioCrawler({
         position,
         pageScore,
         headingLevel,
+        // Composite rank — used as primary sort after _text_match
+        rank: computeRank(pageScore, headingLevel, position),
       });
 
       position++;
     });
 
-    // Fallback: page has no headings at all
+    // Fallback: page has no headings
     if (records.length === 0) {
       const textContent = normalize(
         container.clone().find("pre, code").remove().end().text()
@@ -90,6 +110,7 @@ const crawler = new CheerioCrawler({
         .map((_, el) => $(el).text())
         .get();
 
+      const headingLevel = 1;
       records.push({
         title,
         lvl0: title,
@@ -101,7 +122,8 @@ const crawler = new CheerioCrawler({
         url: url.split("#")[0],
         position: 0,
         pageScore,
-        headingLevel: 1,
+        headingLevel,
+        rank: computeRank(pageScore, headingLevel, 0),
       });
     }
 
