@@ -6,56 +6,22 @@ type SearchOptions = {
   perPage?: number;
 };
 
-// async function search() {
-//   const result = await client
-//     .collections("docs")
-//     .documents()
-//     .search({
-//       q: "routing",
-//       query_by: "heading,content,code",
-//     });
-
-//   console.log(result.hits);
-// }
-
-// search();
-
-
-export async function searchDocs({
-  query,
-  page = 1,
-  perPage = 10,
-}: SearchOptions) {
-
+export async function searchDocs({ query, page = 1, perPage = 10 }: SearchOptions) {
   const result = await client
     .collections("docs")
     .documents()
     .search({
-
       q: query,
-
-      query_by: "heading,lvl1,lvl2,lvl3,content",
-
-      query_by_weights: "20,15,12,10,5",
-
-      prefix: true,
-
-      num_typos: 2,
-
-      prioritize_exact_match: true,
-
-      drop_tokens_threshold: 0,
-
-      sort_by: "_text_match:desc,position:asc",
-
-      highlight_fields: "heading,content",
-
-      include_fields:
-        "title,lvl0,lvl1,lvl2,lvl3,heading,content,url,type",
+      query_by: "heading,title,content,code",
+      query_by_weights: "15,10,5,2",
+      prefix: "true,true,false,false",
+      num_typos: 1,
+      highlight_fields: "heading,content,code",
+      include_fields: "title,heading,content,url,position,pageScore,headingLevel,lvl1,lvl2",
+      sort_by: "_text_match:desc,pageScore:desc,position:asc",
       page,
       per_page: perPage,
     });
 
   return result;
 }
-
