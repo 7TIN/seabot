@@ -72,6 +72,8 @@ export async function searchByText({
   return searchByVector({
     vector,
     limit,
-    scoreThreshold,
+    ...(typeof scoreThreshold === "number"
+      ? { scoreThreshold }
+      : {}),
   });
 }

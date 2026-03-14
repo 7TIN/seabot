@@ -21,7 +21,7 @@ type EmbeddedDoc = {
 
 const EMBEDDED_DOCS_PATH =
   process.env.EMBEDDED_DOCS_PATH ??
-  "storage/key_value_stores/default/embedded_docs.json";
+  "storage/key_value_stores/default/embedded_docs_qwen.json";
 
 const BATCH_SIZE = Math.max(
   1,
