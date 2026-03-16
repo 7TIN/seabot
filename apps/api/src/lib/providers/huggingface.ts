@@ -1,11 +1,13 @@
 ﻿// lib/providers/huggingface.ts
 import fs from "fs";
 import path from "path";
+import { InferenceClient } from "@huggingface/inference";
+
+type FeatureExtractionArgs = Parameters<InferenceClient["featureExtraction"]>[0];
+type Provider = NonNullable<FeatureExtractionArgs["provider"]>;
 
 const MODEL = process.env.HF_EMBEDDING_MODEL ?? "Qwen/Qwen3-Embedding-0.6B";
-const HF_URL =
-  process.env.HF_EMBEDDING_URL ??
-  `https://router.huggingface.co/hf-inference/pipeline/feature-extraction/${MODEL}`;
+const PROVIDER = (process.env.HF_PROVIDER ?? "hf-inference") as Provider;
 const OUTPUT_PATH = path.resolve("storage/key_value_stores/default/query_vector.json");
 
 function l2Normalize(v: number[]): number[] {
@@ -19,25 +21,26 @@ function saveVector(vector: number[]): void {
   console.log(`[huggingface] Saved query vector -> ${OUTPUT_PATH}`);
 }
 
+function is2dArray(data: number[] | number[][]): data is number[][] {
+  return Array.isArray(data[0]);
+}
+
 export async function embedQuery(text: string): Promise<number[]> {
   const token = process.env.HF_TOKEN;
   if (!token) throw new Error("HF_TOKEN not set in .env");
 
-  const res = await fetch(HF_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ inputs: text, options: { wait_for_model: true } }),
-  });
+  const client = new InferenceClient(token);
 
-  if (!res.ok) throw new Error(`HuggingFace error ${res.status}: ${await res.text()}`);
+  const data = (await client.featureExtraction({
+    model: MODEL,
+    provider: PROVIDER,
+    inputs: text,
+  })) as number[] | number[][];
 
-  const data = await res.json();
-  if (data?.error) throw new Error(`HuggingFace error: ${data.error}`);
-
-  const vector: number[] = Array.isArray(data[0]) ? data[0] : data;
+  const vector = is2dArray(data) ? data[0] : data;
+  if (!vector || vector.length === 0) {
+    throw new Error("HuggingFace returned an empty embedding.");
+  }
   const normalized = l2Normalize(vector);
 
   saveVector(normalized);
