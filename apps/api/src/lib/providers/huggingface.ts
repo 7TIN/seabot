@@ -1,9 +1,11 @@
-// lib/providers/huggingface.ts
+﻿// lib/providers/huggingface.ts
 import fs from "fs";
 import path from "path";
 
-const MODEL = "Qwen/Qwen3-Embedding-0.6B";
-const HF_URL = `https://api-inference.huggingface.co/pipeline/feature-extraction/${MODEL}`;
+const MODEL = process.env.HF_EMBEDDING_MODEL ?? "Qwen/Qwen3-Embedding-0.6B";
+const HF_URL =
+  process.env.HF_EMBEDDING_URL ??
+  `https://router.huggingface.co/hf-inference/pipeline/feature-extraction/${MODEL}`;
 const OUTPUT_PATH = path.resolve("storage/key_value_stores/default/query_vector.json");
 
 function l2Normalize(v: number[]): number[] {
@@ -14,14 +16,17 @@ function l2Normalize(v: number[]): number[] {
 function saveVector(vector: number[]): void {
   fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
   fs.writeFileSync(OUTPUT_PATH, JSON.stringify(vector));
-  console.log(`[huggingface] Saved query vector → ${OUTPUT_PATH}`);
+  console.log(`[huggingface] Saved query vector -> ${OUTPUT_PATH}`);
 }
 
 export async function embedQuery(text: string): Promise<number[]> {
+  const token = process.env.HF_TOKEN;
+  if (!token) throw new Error("HF_TOKEN not set in .env");
+
   const res = await fetch(HF_URL, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.HF_TOKEN}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ inputs: text, options: { wait_for_model: true } }),
@@ -30,6 +35,8 @@ export async function embedQuery(text: string): Promise<number[]> {
   if (!res.ok) throw new Error(`HuggingFace error ${res.status}: ${await res.text()}`);
 
   const data = await res.json();
+  if (data?.error) throw new Error(`HuggingFace error: ${data.error}`);
+
   const vector: number[] = Array.isArray(data[0]) ? data[0] : data;
   const normalized = l2Normalize(vector);
 
