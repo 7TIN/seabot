@@ -1,12 +1,12 @@
-﻿import { embedQuery as embedColab } from "./providers/colab.ts";
-import { embedQuery as embedHuggingFace } from "./providers/huggingface.ts";
-import { embedQuery as embedLocal } from "./providers/local.ts";
-
-const providers: Record<string, (text: string) => Promise<number[]>> = {
-  local: embedLocal,
-  hf: embedHuggingFace,
-  huggingface: embedHuggingFace,
-  colab: embedColab,
+﻿const providers: Record<string, (text: string) => Promise<number[]>> = {
+  local: async (text) =>
+    (await import("./providers/local.ts")).embedQuery(text),
+  hf: async (text) =>
+    (await import("./providers/huggingface.ts")).embedQuery(text),
+  huggingface: async (text) =>
+    (await import("./providers/huggingface.ts")).embedQuery(text),
+  colab: async (text) =>
+    (await import("./providers/colab.ts")).embedQuery(text),
 };
 
 function resolveProvider(): string {
