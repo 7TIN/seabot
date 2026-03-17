@@ -1,9 +1,6 @@
-import { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/huggingface_transformers";
-import { env } from "@huggingface/transformers";
-
 import { QDRANT_COLLECTION, qdrantRequest } from "../client/qdrantClient.ts";
 
-env.cacheDir = "./.hf-cache";
+import type { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/huggingface_transformers";
 
 type VectorSearchOptions = {
   vector: number[];
@@ -23,13 +20,23 @@ const QUERY_MODEL =
   "onnx-community/Qwen3-Embedding-0.6B-ONNX";
 
 let embedder: HuggingFaceTransformersEmbeddings | null = null;
+let embedderPromise: Promise<HuggingFaceTransformersEmbeddings> | null = null;
 
-function getEmbedder() {
-  if (!embedder) {
-    embedder = new HuggingFaceTransformersEmbeddings({
-      model: QUERY_MODEL,
-    });
+async function getEmbedder() {
+  if (embedder) return embedder;
+  if (!embedderPromise) {
+    embedderPromise = (async () => {
+      const { env } = await import("@huggingface/transformers");
+      env.cacheDir = "./.hf-cache";
+      const { HuggingFaceTransformersEmbeddings } = await import(
+        "@langchain/community/embeddings/huggingface_transformers"
+      );
+      return new HuggingFaceTransformersEmbeddings({
+        model: QUERY_MODEL,
+      });
+    })();
   }
+  embedder = await embedderPromise;
   return embedder;
 }
 
@@ -66,7 +73,7 @@ export async function searchByText({
   limit = 5,
   scoreThreshold,
 }: TextSearchOptions) {
-  const embeddings = getEmbedder();
+  const embeddings = await getEmbedder();
   const vector = await embeddings.embedQuery(query);
 
   return searchByVector({

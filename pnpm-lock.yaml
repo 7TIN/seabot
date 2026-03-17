@@ -10,12 +10,15 @@ importers:
 
   apps/api:
     dependencies:
+      '@huggingface/inference':
+        specifier: ^4.13.15
+        version: 4.13.15
       '@huggingface/transformers':
         specifier: ^3.8.1
         version: 3.8.1
       '@langchain/community':
         specifier: ^1.1.23
-        version: 1.1.23(@browserbasehq/sdk@2.8.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.58.2)(deepmerge@4.3.1)(dotenv@17.3.1)(openai@6.29.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6))(@huggingface/transformers@3.8.1)(@ibm-cloud/watsonx-ai@1.7.9)(@langchain/core@1.1.32(openai@6.29.0(ws@8.19.0)(zod@4.3.6))(ws@8.19.0))(ibm-cloud-sdk-core@5.4.9)(ignore@7.0.5)(jsdom@26.1.0)(jsonwebtoken@9.0.3)(lodash@4.17.23)(openai@6.29.0(ws@8.19.0)(zod@4.3.6))(playwright@1.58.2)(typesense@3.0.2(@babel/runtime@7.28.6))(ws@8.19.0)
+        version: 1.1.23(@browserbasehq/sdk@2.8.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.58.2)(deepmerge@4.3.1)(dotenv@17.3.1)(openai@6.29.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6))(@huggingface/inference@4.13.15)(@huggingface/transformers@3.8.1)(@ibm-cloud/watsonx-ai@1.7.9)(@langchain/core@1.1.32(openai@6.29.0(ws@8.19.0)(zod@4.3.6))(ws@8.19.0))(ibm-cloud-sdk-core@5.4.9)(ignore@7.0.5)(jsdom@26.1.0)(jsonwebtoken@9.0.3)(lodash@4.17.23)(openai@6.29.0(ws@8.19.0)(zod@4.3.6))(playwright@1.58.2)(typesense@3.0.2(@babel/runtime@7.28.6))(ws@8.19.0)
       crawlee:
         specifier: ^3.16.0
         version: 3.16.0(@types/node@20.19.33)(playwright@1.58.2)
@@ -701,9 +704,16 @@ packages:
     peerDependencies:
       react: '>=16.0.0'
 
+  '@huggingface/inference@4.13.15':
+    resolution: {integrity: sha512-V7B13KFDVhYkQqgx8vpMcmtEG+PoePlh65IUvpphTTItHAq6zRLcsS4torh1QavUaT+6nEwho4wFXzBQNGBwKQ==}
+    engines: {node: '>=18'}
+
   '@huggingface/jinja@0.5.6':
     resolution: {integrity: sha512-MyMWyLnjqo+KRJYSH7oWNbsOn5onuIvfXYPcc0WOGxU0eHUV7oAYUoQTl2BMdu7ml+ea/bu11UM+EshbeHwtIA==}
     engines: {node: '>=18'}
+
+  '@huggingface/tasks@0.19.90':
+    resolution: {integrity: sha512-nfV9luJbvwGQ/5oKXkKhCV9h4X7mwh1YaGG3ORd6UMLDSwr1OFSSatcBX0O9OtBtmNK19aGSjbLFqqgcIR6+IA==}
 
   '@huggingface/transformers@3.8.1':
     resolution: {integrity: sha512-tsTk4zVjImqdqjS8/AOZg2yNLd1z9S5v+7oUPpXaasDRwEDhB+xnglK1k5cad26lL5/ZIaeREgWWy0bs9y9pPA==}
@@ -5747,7 +5757,14 @@ snapshots:
     dependencies:
       react: 19.2.3
 
+  '@huggingface/inference@4.13.15':
+    dependencies:
+      '@huggingface/jinja': 0.5.6
+      '@huggingface/tasks': 0.19.90
+
   '@huggingface/jinja@0.5.6': {}
+
+  '@huggingface/tasks@0.19.90': {}
 
   '@huggingface/transformers@3.8.1':
     dependencies:
@@ -5953,7 +5970,7 @@ snapshots:
       - openai
       - ws
 
-  '@langchain/community@1.1.23(@browserbasehq/sdk@2.8.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.58.2)(deepmerge@4.3.1)(dotenv@17.3.1)(openai@6.29.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6))(@huggingface/transformers@3.8.1)(@ibm-cloud/watsonx-ai@1.7.9)(@langchain/core@1.1.32(openai@6.29.0(ws@8.19.0)(zod@4.3.6))(ws@8.19.0))(ibm-cloud-sdk-core@5.4.9)(ignore@7.0.5)(jsdom@26.1.0)(jsonwebtoken@9.0.3)(lodash@4.17.23)(openai@6.29.0(ws@8.19.0)(zod@4.3.6))(playwright@1.58.2)(typesense@3.0.2(@babel/runtime@7.28.6))(ws@8.19.0)':
+  '@langchain/community@1.1.23(@browserbasehq/sdk@2.8.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.58.2)(deepmerge@4.3.1)(dotenv@17.3.1)(openai@6.29.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6))(@huggingface/inference@4.13.15)(@huggingface/transformers@3.8.1)(@ibm-cloud/watsonx-ai@1.7.9)(@langchain/core@1.1.32(openai@6.29.0(ws@8.19.0)(zod@4.3.6))(ws@8.19.0))(ibm-cloud-sdk-core@5.4.9)(ignore@7.0.5)(jsdom@26.1.0)(jsonwebtoken@9.0.3)(lodash@4.17.23)(openai@6.29.0(ws@8.19.0)(zod@4.3.6))(playwright@1.58.2)(typesense@3.0.2(@babel/runtime@7.28.6))(ws@8.19.0)':
     dependencies:
       '@browserbasehq/stagehand': 1.14.0(@playwright/test@1.58.2)(deepmerge@4.3.1)(dotenv@17.3.1)(openai@6.29.0(ws@8.19.0)(zod@4.3.6))(zod@4.3.6)
       '@ibm-cloud/watsonx-ai': 1.7.9
@@ -5971,6 +5988,7 @@ snapshots:
       zod: 4.3.6
     optionalDependencies:
       '@browserbasehq/sdk': 2.8.0
+      '@huggingface/inference': 4.13.15
       '@huggingface/transformers': 3.8.1
       ignore: 7.0.5
       jsdom: 26.1.0
