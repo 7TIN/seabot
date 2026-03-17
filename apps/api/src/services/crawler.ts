@@ -1,4 +1,99 @@
+import "dotenv/config";
 import { CheerioCrawler, Dataset } from "crawlee";
+import { gunzipSync } from "node:zlib";
+
+const DEFAULT_DOCS_PATH = "/docs";
+
+function normalizeDocsPath(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return DEFAULT_DOCS_PATH;
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+const DOCS_PATH = normalizeDocsPath(
+  process.env.CRAWL_DOCS_PATH ?? DEFAULT_DOCS_PATH
+);
+const DOCS_SLUG = DOCS_PATH.replace(/^\/+/, "").replace(/\/+$/, "");
+const DOCS_GLOB = DOCS_SLUG ? `**/${DOCS_SLUG}/**` : "**/**";
+
+function splitCsv(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+async function loadStartUrls(): Promise<string[]> {
+  const explicit = splitCsv(process.env.CRAWL_START_URLS);
+  if (explicit.length > 0) {
+    return explicit;
+  }
+
+  const baseUrl = process.env.CRAWL_BASE_URL;
+  if (!baseUrl) {
+    throw new Error("CRAWL_BASE_URL not set. Example: https://hono.dev");
+  }
+
+  const docsUrl = new URL(DOCS_PATH, baseUrl).toString();
+  const docsPrefix = docsUrl.endsWith("/") ? docsUrl : `${docsUrl}/`;
+
+  const sitemapUrl =
+    process.env.CRAWL_SITEMAP_URL ??
+    new URL("/sitemap.xml", baseUrl).toString();
+
+  async function fetchSitemap(url: string): Promise<string> {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`Sitemap fetch failed: ${res.status} ${res.statusText}`);
+    }
+    if (url.endsWith(".gz")) {
+      const buf = Buffer.from(await res.arrayBuffer());
+      return gunzipSync(buf).toString("utf8");
+    }
+    return await res.text();
+  }
+
+  function extractLocs(xml: string): string[] {
+    return Array.from(xml.matchAll(/<loc>([^<]+)<\/loc>/g))
+      .map((match) => match[1])
+      .filter((url): url is string => typeof url === "string");
+  }
+
+  async function gatherSitemapUrls(rootUrl: string): Promise<string[]> {
+    const xml = await fetchSitemap(rootUrl);
+    const locs = extractLocs(xml);
+    const sitemapLocs = locs.filter((loc) =>
+      loc.endsWith(".xml") || loc.endsWith(".xml.gz")
+    );
+    if (sitemapLocs.length === 0) {
+      return locs;
+    }
+    const nestedUrls: string[] = [];
+    for (const loc of sitemapLocs) {
+      try {
+        const nestedXml = await fetchSitemap(loc);
+        nestedUrls.push(...extractLocs(nestedXml));
+      } catch (error) {
+        console.warn(`[crawler] nested sitemap failed: ${loc} (${String(error)})`);
+      }
+    }
+    return nestedUrls.length ? nestedUrls : locs;
+  }
+
+  try {
+    const urls = await gatherSitemapUrls(sitemapUrl);
+    const filtered = urls.filter((url) => url.startsWith(docsPrefix));
+    const unique = Array.from(new Set(filtered));
+    if (unique.length > 0) {
+      return unique;
+    }
+  } catch (error) {
+    console.warn(`[crawler] sitemap fetch failed: ${String(error)}`);
+  }
+
+  return [docsUrl];
+}
 
 function normalize(text: string) {
   return text
@@ -43,11 +138,19 @@ function computeRank(pageScore: number, headingLevel: number, position: number):
 }
 
 const crawler = new CheerioCrawler({
-  maxRequestsPerCrawl: 500,
+  maxRequestsPerCrawl: Math.max(
+    1,
+    Number(process.env.CRAWL_MAX_REQUESTS ?? 2000)
+  ),
 
   async requestHandler({ request, $, enqueueLinks, log }) {
     const url = request.loadedUrl!;
     log.info(`Processing ${url}`);
+
+    await enqueueLinks({
+      strategy: "same-domain",
+      globs: [DOCS_GLOB],
+    });
 
     $("nav, aside, footer, script, style").remove();
 
@@ -130,10 +233,6 @@ const crawler = new CheerioCrawler({
     log.info(`Extracted ${records.length} records from ${url}`);
     await Dataset.pushData(records);
 
-    await enqueueLinks({
-      strategy: "same-domain",
-      globs: ["**/docs/**", "**/guide/**", "**/reference/**"],
-    });
   },
 
   async failedRequestHandler({ request, log }) {
@@ -141,5 +240,7 @@ const crawler = new CheerioCrawler({
   },
 });
 
-await crawler.run(["https://hono.dev/docs"]);
+const startUrls = await loadStartUrls();
+console.log(`[crawler] start urls: ${startUrls.length}`);
+await crawler.run(startUrls);
 await Dataset.exportToJSON("docs");
