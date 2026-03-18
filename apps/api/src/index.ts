@@ -5,6 +5,7 @@ import { embedQuery } from "./lib/embedQuery.ts";
 import { searchByVector } from "./services/qdrantSearch.ts";
 import { buildRagPrompt } from "./lib/ragPrompt.ts";
 import { generateAnswer } from "./lib/llm.ts";
+import { selectContexts } from "./lib/retrieval.ts";
 
 const app = new Hono();
 
@@ -55,6 +56,13 @@ function parseHistory(value: unknown): HistoryTurn[] | undefined {
     })
     .filter((v): v is HistoryTurn => Boolean(v));
   return turns.length ? turns : undefined;
+}
+
+function resolveCandidateLimit(finalLimit: number): number {
+  const envValue = Number(process.env.RAG_CANDIDATE_LIMIT ?? 30);
+  const candidateFromEnv =
+    Number.isFinite(envValue) && envValue > 0 ? Math.floor(envValue) : 30;
+  return Math.max(finalLimit, candidateFromEnv, finalLimit * 4);
 }
 
 app.get("/", (c) => {
@@ -187,27 +195,23 @@ app.post("/ai-answer", async (c) => {
   const history = parseHistory(body.history);
 
   try {
+    const finalLimit = limitRaw ?? 5;
+    const candidateLimit = resolveCandidateLimit(finalLimit);
+
     const vector = await embedQuery(query);
     const results = await searchByVector({
       vector,
-      limit: limitRaw ?? 5,
+      limit: candidateLimit,
       ...(typeof scoreThresholdRaw === "number" &&
       !Number.isNaN(scoreThresholdRaw)
         ? { scoreThreshold: scoreThresholdRaw }
         : {}),
     });
 
-    const contexts = results.map((item: any, index: number) => {
-      const payload = item?.payload ?? {};
-      return {
-        id: index + 1,
-        url: payload.url,
-        title: payload.title,
-        heading: payload.heading,
-        content: payload.content,
-        code: payload.code,
-        score: item?.score,
-      };
+    const contexts = selectContexts({
+      query,
+      rawResults: results,
+      limit: finalLimit,
     });
 
     if (contexts.length === 0) {
@@ -234,17 +238,21 @@ app.post("/ai-answer", async (c) => {
       system,
       user,
       temperature: temperatureRaw ?? 0.2,
-      maxTokens: maxTokensRaw ?? 800,
+      maxTokens: maxTokensRaw ?? 1200,
     });
 
-    const responseSources = sources.map((s) => ({
-      id: s.id,
-      url: s.url,
-      title: s.title,
-      heading: s.heading,
-      keywords: s.keywords,
-      score: s.score,
-    }));
+    const responseSources = sources.map((s) => {
+      const ranked = contexts.find((ctx) => ctx.id === s.id);
+      return {
+        id: s.id,
+        url: s.url,
+        title: s.title,
+        heading: s.heading,
+        keywords: s.keywords,
+        score: s.score,
+        rankScore: ranked?.rankScore,
+      };
+    });
 
     return c.json({
       query,
