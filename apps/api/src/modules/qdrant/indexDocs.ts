@@ -1,7 +1,8 @@
 import fs from "fs/promises";
 import path from "path";
+import { QDRANT_COLLECTION, qdrantRequest } from "../../clients/qdrantClient.ts";
 
-import { QDRANT_COLLECTION, qdrantRequest } from "../client/qdrantClient.ts";
+// import { QDRANT_COLLECTION, qdrantRequest } from "../client/qdrantClient.ts";
 
 type EmbeddedDoc = {
   title: string;

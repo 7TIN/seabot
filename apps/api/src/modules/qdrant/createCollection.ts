@@ -1,12 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-
-import {
-  QDRANT_COLLECTION,
-  qdrantFetch,
-  qdrantRequest,
-  type QdrantResponse,
-} from "../client/qdrantClient.ts";
+import { QDRANT_COLLECTION, qdrantFetch, qdrantRequest, type QdrantResponse } from "../../clients/qdrantClient.ts";
 
 type EmbeddedDoc = {
   embedding: number[];

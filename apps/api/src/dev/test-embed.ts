@@ -1,6 +1,7 @@
 ﻿// test-embed.ts
 import "dotenv/config";
-import { embedQuery } from "../lib/embedQuery.ts";
+import { embedQuery } from "../modules/embeddings/embedQuery.ts";
+// import { embedQuery } from "../lib/embedQuery.ts";
 
 const query = "how to use the Client Components";
 const provider = process.env.EMBEDDINGS_PROVIDER;

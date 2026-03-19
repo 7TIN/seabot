@@ -1,6 +1,7 @@
-import { QDRANT_COLLECTION, qdrantRequest } from "../client/qdrantClient.ts";
+// import { QDRANT_COLLECTION, qdrantRequest } from "../client/qdrantClient.ts";
 
 import type { HuggingFaceTransformersEmbeddings } from "@langchain/community/embeddings/huggingface_transformers";
+import { QDRANT_COLLECTION, qdrantRequest } from "../../clients/qdrantClient.ts";
 
 type VectorSearchOptions = {
   vector: number[];

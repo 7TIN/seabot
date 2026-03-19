@@ -1,6 +1,7 @@
 import fs from "fs";
 import { createHash } from "node:crypto";
-import { client } from "../client/typesenseClient.ts";
+import { client } from "../../clients/typesenseClient.ts";
+// import { client } from "../client/typesenseClient.ts";
 
 type IndexedDoc = {
   id: string;

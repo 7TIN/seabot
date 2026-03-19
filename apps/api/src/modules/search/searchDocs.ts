@@ -1,4 +1,6 @@
-import { client } from "../client/typesenseClient.ts";
+// import { client } from "../client/typesenseClient.ts";
+
+import { client } from "../../clients/typesenseClient.ts";
 
 type SearchOptions = {
   query: string;

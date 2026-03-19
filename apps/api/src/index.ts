@@ -1,11 +1,17 @@
 import { Hono } from "hono";
-import { searchDocs } from "./services/search.ts";
+// import { searchDocs } from "./services/search.ts";
 import { cors } from "hono/cors";
-import { embedQuery } from "./lib/embedQuery.ts";
-import { searchByVector } from "./services/qdrantSearch.ts";
-import { buildRagPrompt } from "./lib/ragPrompt.ts";
-import { generateAnswer } from "./lib/llm.ts";
-import { selectContexts } from "./lib/retrieval.ts";
+import { embedQuery } from "./modules/embeddings/embedQuery.ts";
+import { searchByVector } from "./modules/qdrant/search.ts";
+import { selectContexts } from "./modules/rag/retrieval.ts";
+import { buildRagPrompt } from "./modules/rag/ragPrompt.ts";
+import { generateAnswer } from "./modules/rag/llm.ts";
+import { searchDocs } from "./modules/search/searchDocs.ts";
+// import { embedQuery } from "./lib/embedQuery.ts";
+// import { searchByVector } from "./services/qdrantSearch.ts";
+// import { buildRagPrompt } from "./lib/ragPrompt.ts";
+// import { generateAnswer } from "./lib/llm.ts";
+// import { selectContexts } from "./lib/retrieval.ts";
 
 const app = new Hono();
 
