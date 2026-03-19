@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-// import { searchDocs } from "./services/search.ts";
 import { cors } from "hono/cors";
 import { embedQuery } from "./modules/embeddings/embedQuery.ts";
 import { searchByVector } from "./modules/qdrant/search.ts";
@@ -7,11 +6,11 @@ import { selectContexts } from "./modules/rag/retrieval.ts";
 import { buildRagPrompt } from "./modules/rag/ragPrompt.ts";
 import { generateAnswer } from "./modules/rag/llm.ts";
 import { searchDocs } from "./modules/search/searchDocs.ts";
-// import { embedQuery } from "./lib/embedQuery.ts";
-// import { searchByVector } from "./services/qdrantSearch.ts";
-// import { buildRagPrompt } from "./lib/ragPrompt.ts";
-// import { generateAnswer } from "./lib/llm.ts";
-// import { selectContexts } from "./lib/retrieval.ts";
+import {
+  cacheGetJson,
+  cacheSetJson,
+  makeCacheKey,
+} from "./modules/cache/redisCache.ts";
 
 const app = new Hono();
 
@@ -64,6 +63,91 @@ function parseHistory(value: unknown): HistoryTurn[] | undefined {
   return turns.length ? turns : undefined;
 }
 
+function envPositiveInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
+function normalizeCacheQuery(query: string): string {
+  return query.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function historyForCache(history?: HistoryTurn[]): HistoryTurn[] {
+  if (!history || history.length === 0) return [];
+  return history.slice(-6);
+}
+
+function isNumberArray(value: unknown): value is number[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => typeof item === "number" && Number.isFinite(item))
+  );
+}
+
+const CACHE_INDEX_VERSION = process.env.CACHE_INDEX_VERSION ?? "v1";
+const SEARCH_CACHE_TTL_SEC = envPositiveInt("SEARCH_CACHE_TTL_SEC", 300);
+const EMBEDDING_CACHE_TTL_SEC = envPositiveInt("EMBEDDING_CACHE_TTL_SEC", 86_400);
+const VECTOR_RESULTS_CACHE_TTL_SEC = envPositiveInt(
+  "VECTOR_RESULTS_CACHE_TTL_SEC",
+  300
+);
+const AI_ANSWER_CACHE_TTL_SEC = envPositiveInt("AI_ANSWER_CACHE_TTL_SEC", 180);
+
+async function getCachedEmbedding(query: string): Promise<number[]> {
+  const cacheKey = makeCacheKey("embed-query", {
+    version: CACHE_INDEX_VERSION,
+    provider: process.env.EMBEDDINGS_PROVIDER ?? "unknown",
+    query: normalizeCacheQuery(query),
+  });
+
+  const cached = await cacheGetJson<unknown>(cacheKey);
+  if (isNumberArray(cached)) {
+    return cached;
+  }
+
+  const vector = await embedQuery(query);
+  await cacheSetJson(cacheKey, vector, EMBEDDING_CACHE_TTL_SEC);
+  return vector;
+}
+
+async function getCachedVectorResults(args: {
+  query: string;
+  limit: number;
+  scoreThreshold?: number;
+}) {
+  const cacheKey = makeCacheKey("vector-results", {
+    version: CACHE_INDEX_VERSION,
+    provider: process.env.EMBEDDINGS_PROVIDER ?? "unknown",
+    query: normalizeCacheQuery(args.query),
+    limit: args.limit,
+    scoreThreshold:
+      typeof args.scoreThreshold === "number" && !Number.isNaN(args.scoreThreshold)
+        ? args.scoreThreshold
+        : null,
+  });
+
+  const cached = await cacheGetJson<unknown[]>(cacheKey);
+  if (Array.isArray(cached)) {
+    return cached;
+  }
+
+  const vector = await getCachedEmbedding(args.query);
+  const results = await searchByVector({
+    vector,
+    limit: args.limit,
+    ...(typeof args.scoreThreshold === "number" && !Number.isNaN(args.scoreThreshold)
+      ? { scoreThreshold: args.scoreThreshold }
+      : {}),
+  });
+
+  await cacheSetJson(cacheKey, results, VECTOR_RESULTS_CACHE_TTL_SEC);
+  return results;
+}
+
 function resolveCandidateLimit(finalLimit: number): number {
   const envValue = Number(process.env.RAG_CANDIDATE_LIMIT ?? 30);
   const candidateFromEnv =
@@ -100,18 +184,46 @@ app.post("/search", async (c) => {
   const page = pageRaw ?? 1;
   const perPage = perPageRaw ?? 10;
 
+  const searchCacheKey = makeCacheKey("search", {
+    version: CACHE_INDEX_VERSION,
+    query: normalizeCacheQuery(query),
+    page,
+    perPage,
+  });
+
   try {
+    const cached = await cacheGetJson<{
+      found: number;
+      page: number;
+      results: unknown[];
+    }>(searchCacheKey);
+
+    if (cached) {
+      return c.json({
+        query,
+        found: cached.found,
+        page: cached.page,
+        results: cached.results,
+      });
+    }
+
     const result = await searchDocs({
       query,
       page,
       perPage,
     });
 
-    return c.json({
-      query,
+    const responseBody = {
       found: result.found,
       page: result.page,
       results: result.hits,
+    };
+
+    await cacheSetJson(searchCacheKey, responseBody, SEARCH_CACHE_TTL_SEC);
+
+    return c.json({
+      query,
+      ...responseBody,
     });
   } catch (error) {
     console.error(error);
@@ -145,9 +257,8 @@ app.post("/ai-search", async (c) => {
   const scoreThreshold = scoreThresholdRaw;
 
   try {
-    const vector = await embedQuery(query);
-    const results = await searchByVector({
-      vector,
+    const results = await getCachedVectorResults({
+      query,
       limit,
       ...(typeof scoreThreshold === "number" && !Number.isNaN(scoreThreshold)
         ? { scoreThreshold }
@@ -203,10 +314,44 @@ app.post("/ai-answer", async (c) => {
   try {
     const finalLimit = limitRaw ?? 5;
     const candidateLimit = resolveCandidateLimit(finalLimit);
+    const finalTemperature = temperatureRaw ?? 0.2;
+    const finalMaxTokens = maxTokensRaw ?? 1200;
 
-    const vector = await embedQuery(query);
-    const results = await searchByVector({
-      vector,
+    const answerCacheKey = makeCacheKey("ai-answer", {
+      version: CACHE_INDEX_VERSION,
+      query: normalizeCacheQuery(query),
+      history: historyForCache(history),
+      limit: finalLimit,
+      candidateLimit,
+      scoreThreshold:
+        typeof scoreThresholdRaw === "number" && !Number.isNaN(scoreThresholdRaw)
+          ? scoreThresholdRaw
+          : null,
+      temperature: finalTemperature,
+      maxTokens: finalMaxTokens,
+      includeContext,
+      llmProvider: process.env.LLM_PROVIDER ?? "unknown",
+      llmModel: process.env.LLM_MODEL ?? "default",
+      embeddingsProvider: process.env.EMBEDDINGS_PROVIDER ?? "unknown",
+    });
+
+    const cachedAnswer = await cacheGetJson<{
+      answer: string;
+      provider: string;
+      model: string;
+      sources: unknown[];
+      context?: unknown[];
+    }>(answerCacheKey);
+
+    if (cachedAnswer) {
+      return c.json({
+        query,
+        ...cachedAnswer,
+      });
+    }
+
+    const results = await getCachedVectorResults({
+      query,
       limit: candidateLimit,
       ...(typeof scoreThresholdRaw === "number" &&
       !Number.isNaN(scoreThresholdRaw)
@@ -243,8 +388,8 @@ app.post("/ai-answer", async (c) => {
     const llm = await generateAnswer({
       system,
       user,
-      temperature: temperatureRaw ?? 0.2,
-      maxTokens: maxTokensRaw ?? 1200,
+      temperature: finalTemperature,
+      maxTokens: finalMaxTokens,
     });
 
     const responseSources = sources.map((s) => {
@@ -260,13 +405,19 @@ app.post("/ai-answer", async (c) => {
       };
     });
 
-    return c.json({
-      query,
+    const responseBody = {
       answer: llm.text.trim(),
       provider: llm.provider,
       model: llm.model,
       sources: responseSources,
       ...(includeContext ? { context: sources } : {}),
+    };
+
+    await cacheSetJson(answerCacheKey, responseBody, AI_ANSWER_CACHE_TTL_SEC);
+
+    return c.json({
+      query,
+      ...responseBody,
     });
   } catch (error) {
     console.error(error);
