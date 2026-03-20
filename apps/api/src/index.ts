@@ -11,6 +11,12 @@ import {
   cacheSetJson,
   makeCacheKey,
 } from "./modules/cache/redisCache.ts";
+import {
+  appendConversationTurns,
+  ensureConversationId,
+  getConversationPromptHistory,
+  mergePromptHistory,
+} from "./modules/conversation/store.ts";
 
 const app = new Hono();
 
@@ -310,6 +316,7 @@ app.post("/ai-answer", async (c) => {
   }
 
   const history = parseHistory(body.history);
+  const conversationId = ensureConversationId(body.conversationId);
 
   try {
     const finalLimit = limitRaw ?? 5;
@@ -317,10 +324,17 @@ app.post("/ai-answer", async (c) => {
     const finalTemperature = temperatureRaw ?? 0.2;
     const finalMaxTokens = maxTokensRaw ?? 1200;
 
+    const storedPromptHistory = await getConversationPromptHistory(conversationId);
+    const promptHistory = mergePromptHistory({
+      stored: storedPromptHistory,
+      ...(history ? { request: history } : {}),
+    });
+
     const answerCacheKey = makeCacheKey("ai-answer", {
       version: CACHE_INDEX_VERSION,
       query: normalizeCacheQuery(query),
-      history: historyForCache(history),
+      history: historyForCache(promptHistory),
+      conversationId,
       limit: finalLimit,
       candidateLimit,
       scoreThreshold:
@@ -344,8 +358,17 @@ app.post("/ai-answer", async (c) => {
     }>(answerCacheKey);
 
     if (cachedAnswer) {
+      await appendConversationTurns({
+        conversationId,
+        turns: [
+          { role: "user", content: query },
+          { role: "assistant", content: cachedAnswer.answer },
+        ],
+      });
+
       return c.json({
         query,
+        conversationId,
         ...cachedAnswer,
       });
     }
@@ -366,10 +389,20 @@ app.post("/ai-answer", async (c) => {
     });
 
     if (contexts.length === 0) {
+      const fallbackAnswer =
+        "I could not find this in the docs yet. Can you clarify or provide more details?";
+      await appendConversationTurns({
+        conversationId,
+        turns: [
+          { role: "user", content: query },
+          { role: "assistant", content: fallbackAnswer },
+        ],
+      });
+
       return c.json({
         query,
-        answer:
-          "I could not find this in the docs yet. Can you clarify or provide more details?",
+        conversationId,
+        answer: fallbackAnswer,
         sources: [],
       });
     }
@@ -379,8 +412,8 @@ app.post("/ai-answer", async (c) => {
       contexts,
       maxCharsPerChunk: 1200,
     };
-    if (history) {
-      promptArgs.history = history;
+    if (promptHistory.length > 0) {
+      promptArgs.history = promptHistory;
     }
 
     const { system, user, sources } = buildRagPrompt(promptArgs);
@@ -414,9 +447,17 @@ app.post("/ai-answer", async (c) => {
     };
 
     await cacheSetJson(answerCacheKey, responseBody, AI_ANSWER_CACHE_TTL_SEC);
+    await appendConversationTurns({
+      conversationId,
+      turns: [
+        { role: "user", content: query },
+        { role: "assistant", content: responseBody.answer },
+      ],
+    });
 
     return c.json({
       query,
+      conversationId,
       ...responseBody,
     });
   } catch (error) {
