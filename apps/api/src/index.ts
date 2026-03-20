@@ -77,6 +77,14 @@ function envPositiveInt(name: string, fallback: number): number {
   return Math.floor(parsed);
 }
 
+function envOptionalPositiveInt(name: string): number | undefined {
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return Math.floor(parsed);
+}
+
 function normalizeCacheQuery(query: string): string {
   return query.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -102,6 +110,24 @@ const VECTOR_RESULTS_CACHE_TTL_SEC = envPositiveInt(
   300
 );
 const AI_ANSWER_CACHE_TTL_SEC = envPositiveInt("AI_ANSWER_CACHE_TTL_SEC", 180);
+const RAG_DEFAULT_LIMIT = envPositiveInt("RAG_DEFAULT_LIMIT", 12);
+const RAG_CANDIDATE_MULTIPLIER = envPositiveInt("RAG_CANDIDATE_MULTIPLIER", 6);
+
+function resolvePerPageLimit(finalLimit: number, requested?: number): number {
+  if (typeof requested === "number" && isPositiveInt(requested)) {
+    return Math.min(finalLimit, requested);
+  }
+  const envValue = envOptionalPositiveInt("RAG_PER_PAGE_LIMIT");
+  if (envValue) return Math.min(finalLimit, envValue);
+  return Math.max(2, Math.min(6, Math.ceil(finalLimit / 4)));
+}
+
+function resolveMaxCharsPerChunk(requested?: number): number {
+  if (typeof requested === "number" && isPositiveInt(requested)) {
+    return requested;
+  }
+  return envPositiveInt("RAG_MAX_CHARS_PER_CHUNK", 1200);
+}
 
 async function getCachedEmbedding(query: string): Promise<number[]> {
   const cacheKey = makeCacheKey("embed-query", {
@@ -155,10 +181,14 @@ async function getCachedVectorResults(args: {
 }
 
 function resolveCandidateLimit(finalLimit: number): number {
-  const envValue = Number(process.env.RAG_CANDIDATE_LIMIT ?? 30);
+  const envValue = Number(process.env.RAG_CANDIDATE_LIMIT ?? 60);
   const candidateFromEnv =
-    Number.isFinite(envValue) && envValue > 0 ? Math.floor(envValue) : 30;
-  return Math.max(finalLimit, candidateFromEnv, finalLimit * 4);
+    Number.isFinite(envValue) && envValue > 0 ? Math.floor(envValue) : 60;
+  return Math.max(
+    finalLimit,
+    candidateFromEnv,
+    finalLimit * RAG_CANDIDATE_MULTIPLIER
+  );
 }
 
 app.get("/", (c) => {
@@ -294,13 +324,19 @@ app.post("/ai-answer", async (c) => {
   }
 
   const limitRaw = toNumber(body.limit);
+  const perPageLimitRaw = toNumber(body.perPageLimit);
   const scoreThresholdRaw = toNumber(body.scoreThreshold);
   const temperatureRaw = toNumber(body.temperature);
   const maxTokensRaw = toNumber(body.maxTokens);
+  const maxCharsPerChunkRaw = toNumber(body.maxCharsPerChunk);
   const includeContext = body.includeContext === true;
 
   if (limitRaw !== undefined && !isPositiveInt(limitRaw)) {
     return c.json({ error: "'limit' must be a positive integer" }, 400);
+  }
+
+  if (perPageLimitRaw !== undefined && !isPositiveInt(perPageLimitRaw)) {
+    return c.json({ error: "'perPageLimit' must be a positive integer" }, 400);
   }
 
   if (scoreThresholdRaw !== undefined && !Number.isFinite(scoreThresholdRaw)) {
@@ -315,14 +351,20 @@ app.post("/ai-answer", async (c) => {
     return c.json({ error: "'maxTokens' must be a positive integer" }, 400);
   }
 
+  if (maxCharsPerChunkRaw !== undefined && !isPositiveInt(maxCharsPerChunkRaw)) {
+    return c.json({ error: "'maxCharsPerChunk' must be a positive integer" }, 400);
+  }
+
   const history = parseHistory(body.history);
   const conversationId = ensureConversationId(body.conversationId);
 
   try {
-    const finalLimit = limitRaw ?? 5;
+    const finalLimit = limitRaw ?? RAG_DEFAULT_LIMIT;
     const candidateLimit = resolveCandidateLimit(finalLimit);
+    const perPageLimit = resolvePerPageLimit(finalLimit, perPageLimitRaw);
     const finalTemperature = temperatureRaw ?? 0.2;
     const finalMaxTokens = maxTokensRaw ?? 1200;
+    const maxCharsPerChunk = resolveMaxCharsPerChunk(maxCharsPerChunkRaw);
 
     const storedPromptHistory = await getConversationPromptHistory(conversationId);
     const promptHistory = mergePromptHistory({
@@ -343,6 +385,8 @@ app.post("/ai-answer", async (c) => {
           : null,
       temperature: finalTemperature,
       maxTokens: finalMaxTokens,
+      perPageLimit,
+      maxCharsPerChunk,
       includeContext,
       llmProvider: process.env.LLM_PROVIDER ?? "unknown",
       llmModel: process.env.LLM_MODEL ?? "default",
@@ -386,6 +430,7 @@ app.post("/ai-answer", async (c) => {
       query,
       rawResults: results,
       limit: finalLimit,
+      perPageLimit,
     });
 
     if (contexts.length === 0) {
@@ -410,7 +455,7 @@ app.post("/ai-answer", async (c) => {
     const promptArgs: Parameters<typeof buildRagPrompt>[0] = {
       query,
       contexts,
-      maxCharsPerChunk: 1200,
+      maxCharsPerChunk,
     };
     if (promptHistory.length > 0) {
       promptArgs.history = promptHistory;
