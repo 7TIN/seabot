@@ -1,10 +1,14 @@
 {
   "name": "api",
-  "scripts": {
+"scripts": {
     "dev": "bun run --hot src/index.ts",
-    "start:crawler": "tsx src/modules/indexing/crawler.ts",
-    "start": "bun run start:crawler",
-    "start:merge": "bun run tsx scripts/export-dataset.ts"
+    "build": "bun build ./src/index.ts --outdir ./dist --target bun",
+    "start": "bun run dist/index.js",
+    "start:crawler": "bun run src/modules/indexing/crawler.ts",
+    "start:merge": "bun run scripts/export-dataset.ts",
+    "index:typesense": "bun run src/modules/indexing/typesenseCreateCollection.ts && bun run src/modules/indexing/typesenseIndexDocs.ts",
+    "index:qdrant": "bun run src/modules/qdrant/createCollection.ts && bun run src/modules/qdrant/indexDocs.ts",
+    "index:all": "bun run index:typesense && bun run index:qdrant"
   },
   "dependencies": {
     "@huggingface/inference": "^4.13.15",
